@@ -1,144 +1,128 @@
 #include <stdio.h>
-#include <sys/stat.h>
 #include <stdlib.h>
 #include <assert.h>
-#include <string.h>
 #include <ctype.h>
 
 
-char **str_data (char *data, int size, int num);
+typedef struct File
+{
+	char *buf;
+	FILE *text;
+	char **strs;
+	size_t nstr;
+	size_t size;
+}File;
 
-void get_file (char *buf, int file_size, FILE *file, int *num_of_str);
 
+void str_data  (File *file);
+void get_file    (File *file);
+void sort_file   (File *file);
+void print_file  (File *file, char *name);
+int opener       (File *file, int argc, char **argv);
 int scompare (const void *s1, const void *s2);
 
-void sort_file (char **p_str, int num_of_str);
 
-void print_file (char **p_str, int num_of_str);
+int main (int argc, char *argv[])
+{
+	remove ("log");
 
+	File file = {0};
+	if (opener (&file, argc, argv)) return 1;
 
-int main ()
-{	
-	char *filename = "text.txt";
+	get_file   (&file);
+    str_data   (&file); 
+	print_file (&file, "text1");
 
-	FILE *file = fopen (filename, "r");
+	sort_file  (&file);
+	print_file (&file, "text2");
 
-	if (!file) 
-	{
-		fprintf (stderr, "problema with reading file\n");
+	free (file.buf);
+	free (file.strs);
+	fclose (file.text);
 
-		return 1;
-	}
-
-
-	struct stat about_file;
-
-	stat (filename, &about_file);
-
-	int file_size = about_file.st_size;
-
-	char *buf = (char *) calloc (file_size, sizeof (char));
-
-	
-	int num_of_str = 0;
-
-	get_file (buf, file_size, file, &num_of_str);
-
-	char **p_str = str_data (buf, file_size, num_of_str); 
-
-
-	sort_file (p_str, num_of_str);
-
-
-	print_file (p_str, num_of_str);
-
-
-	free (p_str);
+	printf ("#  results here:\n"
+			"#  1) 'text1' <- formated text;\n"
+			"#  2) 'text2' <- sorted text.\n");
 
 	return 0;
 }
 
 
-char **str_data (char *data, int size, int num)
+int opener (File *file, int argc, char **argv)
 {
-	char **str_data = (char **) calloc (num, sizeof (char *));
+	assert (file);
+	assert (argv);
 
-	int nomer = 0;
+	if (argc >= 2)
+		file->text = fopen (argv [1], "r");
+	else
+		file->text = fopen ("text", "r");
 
-	for (int i = 0; i < size;)
+	if (!file)
 	{
-		while (data [i] == '\n')
-		{
-			data [i] = '\0';
-
-			if (i < size)
-
-				i++;
-
-			else
-
-				break;
-		}
-
-		str_data [nomer++] = &(data [i]);
-
-		while (data [i] != '\n')
-
-			if (i < size)
-
-				i++;
-
-			else
-
-				break;
+		perror ("problema with reading file: \n");
+		return 1;
 	}
 
+	fseek (file->text, 0, SEEK_END);
+	file->size = ftell (file->text);
+	fseek (file->text, 0, SEEK_SET);
+	file->buf = (char *) calloc (file->size, sizeof (char));
 
-	return str_data;
+	assert (file->buf);
+
+	return 0;
 }
 
 
-void get_file (char *buf, int file_size, FILE *file, int *num_of_str)
+void str_data (File *file)
 {
-	fread (buf, sizeof (char), file_size, file);
+	assert (file);
 
-	int num = 0;
+	file->strs = (char **) calloc (file->nstr, sizeof (char *));
+    assert (file->strs);
 
-	for (int i = 0; i < file_size;)
+	for (size_t i = 0 /* hot fix by Alesh #2 */, nomer = 0; i < file->size;)
 	{
-		while (buf [i] == '\n')
+		while (i < file->size && file->buf [i] == '\n')
 		{
-			if (i < file_size)
-
-				i++;
-
-			else
-
-				break;
+			file->buf [i] = '\0';
+			i++;
 		}
 
-		if (i < file_size)
+		file->strs [nomer++] = file->buf + i;
 
-			num++;
-
-		while (buf [i] != '\n')
-
-			if (i < file_size)
-
-				i++;
-
-			else
-
-				break;
+		while (i < file->size && file->buf [i] != '\n')
+			i++;
 	}
-	
-
-	*num_of_str = num;
-
-	printf ("#	Amount of strings with letters in start file: %d.\n", num);
+}
 
 
-	return;
+void get_file (File *file)
+{
+	assert (file);
+
+	FILE *log = fopen ("log", "a");
+	assert (log);
+
+	size_t nsymb = fread (file->buf, sizeof (char), file->size, file->text);
+	assert (nsymb == file->size);
+	fprintf (log, "Number of symbols in start file: %lu.\n", nsymb);
+
+	file->nstr = 0; //hot fix by Alesha
+	for (size_t i = 0; i < file->size;)
+	{
+		while (i < file->size && file->buf [i] == '\n')
+			i++;
+
+		if (i < file->size)
+			file->nstr++;
+
+		while (i < file->size && file->buf [i] != '\n')
+			i++;
+	}
+
+	fprintf (log, "#  Amount of strings with letters in start file: %lu.\n", file->nstr);
 }
 
 
@@ -146,9 +130,6 @@ int scompare (const void *s1, const void *s2)
 {
 	assert (s1);
 	assert (s2);
-
-	int len1 = strlen (s1);
-	int len2 = strlen (s2);
 
 	int i = 0, j = 0;
 
@@ -158,47 +139,42 @@ int scompare (const void *s1, const void *s2)
 	while (*(l1 + i) && *(l2 + j))
 	{
 		while (*(l1 + i) && !isalpha (*(l1 + i)))
-
 				i++;
 
 		while (*(l2 + j) && !isalpha (*(l2 + j)))
-
 				j++;
 
 		char c1 = tolower (*(l1 + i));
 		char c2 = tolower (*(l2 + j));
 
 		if (c1 != c2)
-
 			return c1 - c2;
 
 		if (c1 && c2)
 		{
 			i++;
-
 			j++;
 		}
 	}
 }
 
 
-void sort_file (char **p_str, int num_of_str)
+void sort_file (File *file)
 {
-	assert (p_str);
+	assert (file);
 
-	qsort (p_str, num_of_str, sizeof (char *), scompare);
+	qsort (file->strs, file->nstr, sizeof (char *), scompare);
 }
 
 
-void print_file (char **p_str, int num_of_str)
+void print_file (File *file, char *name)
 {
-	assert (p_str);
+	assert (file);
 
+	FILE *output = fopen (name, "w");
 
-	for (int i = 0; i < num_of_str; i++)
-		
-		printf ("%s\n", p_str [i]);
-	
+	for (size_t i = 0; i < file->nstr; i++)
+		fprintf (output, "%s\n", file->strs [i]);
 
-	return;
+	fclose (output);
 }
